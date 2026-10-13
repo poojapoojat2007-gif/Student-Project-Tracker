@@ -1,4 +1,5 @@
 
+const STORAGE_KEY = "workshop-projects-v1";
 const projects = [];
 
 const form = document.querySelector("#project-form");
@@ -8,8 +9,14 @@ const projectList = document.querySelector("#project-list");
 const emptyState = document.querySelector("#empty-state");
 const saveButton = document.querySelector("#save-button");
 const cancelButton = document.querySelector("#cancel-button");
+const message = document.querySelector("#message");
 
 let editingId = null;
+
+// Show a message without interpreting it as HTML
+function showMessage(text) {
+  message.textContent = text;
+}
 
 // Restore the form to Add mode
 function resetForm() {
@@ -17,6 +24,93 @@ function resetForm() {
   editingId = null;
   saveButton.textContent = "Save Project";
   cancelButton.hidden = true;
+}
+
+// Check that stored projects have the expected structure
+function isValidProjectArray(data) {
+  if (!Array.isArray(data)) {
+    return false;
+  }
+
+  const seenIds = new Set();
+
+  return data.every(function (project) {
+    if (
+      project === null ||
+      typeof project !== "object" ||
+      Array.isArray(project) ||
+      typeof project.id !== "string" ||
+      project.id.trim() === "" ||
+      typeof project.name !== "string" ||
+      project.name.trim() === "" ||
+      project.name.length > 80 ||
+      typeof project.status !== "string" ||
+      !["Planned", "In Progress", "Completed"].includes(project.status) ||
+      seenIds.has(project.id)
+    ) {
+      return false;
+    }
+
+    seenIds.add(project.id);
+    return true;
+  });
+}
+
+// Read projects when the page starts
+function loadProjects() {
+  let savedText;
+
+  try {
+    savedText = localStorage.getItem(STORAGE_KEY);
+  } catch (error) {
+    showMessage(
+      "Could not read browser storage. Projects could not be loaded or saved reliably."
+    );
+    return;
+  }
+
+  // No stored value means start with an empty collection
+  if (savedText === null) {
+    return;
+  }
+
+  let savedProjects;
+
+  try {
+    // Turn stored text back into JavaScript data
+    savedProjects = JSON.parse(savedText);
+  } catch (error) {
+    showMessage(
+      "Saved project data is malformed. It has not been overwritten."
+    );
+    return;
+  }
+
+  if (!isValidProjectArray(savedProjects)) {
+    showMessage(
+      "Saved project data is invalid. It has not been overwritten."
+    );
+    return;
+  }
+
+  savedProjects.forEach(function (project) {
+    projects.push(project);
+  });
+}
+
+// Store the collection as text
+function saveProjects() {
+  try {
+    const savedText = JSON.stringify(projects);
+    localStorage.setItem(STORAGE_KEY, savedText);
+    showMessage("Projects saved in this browser.");
+    return true;
+  } catch (error) {
+    showMessage(
+      "Changes could not be saved. Browser storage may be unavailable or full."
+    );
+    return false;
+  }
 }
 
 // Display all projects with their Edit and Delete buttons
@@ -29,7 +123,6 @@ function renderProjects() {
     const editButton = document.createElement("button");
     const deleteButton = document.createElement("button");
 
-    // Display user-entered text safely
     details.textContent = project.name + " - " + project.status;
 
     // Edit button
@@ -69,17 +162,15 @@ function renderProjects() {
         return;
       }
 
-      // Ask for confirmation before deleting
       const confirmed = window.confirm(
         'Delete the project "' + projectToDelete.name + '"?'
       );
 
-      // Cancel leaves the collection unchanged
+      // Cancel does not change the collection
       if (!confirmed) {
         return;
       }
 
-      // Remove only the project with the matching ID
       const projectIndex = projects.findIndex(function (currentProject) {
         return currentProject.id === projectToDelete.id;
       });
@@ -90,13 +181,13 @@ function renderProjects() {
 
       projects.splice(projectIndex, 1);
 
-      // If the deleted project was being edited, reset the form
+      // Reset the form if the deleted project was being edited
       if (editingId === projectToDelete.id) {
         resetForm();
       }
 
-      // Refresh the list and empty-state message
       renderProjects();
+      saveProjects();
     });
 
     item.appendChild(details);
@@ -108,26 +199,23 @@ function renderProjects() {
     projectList.appendChild(item);
   });
 
-  if (emptyState) {
-    emptyState.hidden = projects.length > 0;
-  }
+  emptyState.hidden = projects.length > 0;
 }
 
-// Handle both adding and updating projects
+// Handle adding and updating projects
 form.addEventListener("submit", function (event) {
   event.preventDefault();
 
   const name = nameInput.value.trim();
   const status = statusInput.value;
 
-  // Reject an empty or whitespace-only name
   if (name === "") {
     nameInput.focus();
+    showMessage("Please enter a project name.");
     return;
   }
 
   if (editingId !== null) {
-    // Update the existing project without changing its ID
     const projectToUpdate = projects.find(function (project) {
       return project.id === editingId;
     });
@@ -135,13 +223,15 @@ form.addEventListener("submit", function (event) {
     if (!projectToUpdate) {
       resetForm();
       renderProjects();
+      showMessage("The project could not be found. Please try again.");
       return;
     }
 
+    // Update the project while preserving its ID
     projectToUpdate.name = name;
     projectToUpdate.status = status;
   } else {
-    // Add a new project
+    // Add a new project with a stable ID
     projects.push({
       id: crypto.randomUUID(),
       name: name,
@@ -151,13 +241,16 @@ form.addEventListener("submit", function (event) {
 
   renderProjects();
   resetForm();
+  saveProjects();
 });
 
-// Cancel editing without changing the stored project
+// Cancel editing without changing saved records
 cancelButton.addEventListener("click", function () {
   resetForm();
   renderProjects();
+  showMessage("Edit cancelled. No changes were saved.");
 });
 
-// Display the initial empty state
+// Load saved projects before displaying the list
+loadProjects();
 renderProjects();
