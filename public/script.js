@@ -1,4 +1,6 @@
 
+/* public/script.js */
+
 const projects = [];
 
 const form = document.querySelector("#project-form");
@@ -14,15 +16,12 @@ let editingId = null;
 let collectionLoaded = false;
 let busy = false;
 
-// Display messages safely.
 function showMessage(text) {
   message.textContent = text;
 }
 
-// Disable controls while a request is running.
 function setBusy(value) {
   busy = value;
-
   saveButton.disabled = value;
   cancelButton.disabled = value;
 
@@ -31,7 +30,6 @@ function setBusy(value) {
   });
 }
 
-// Restore the form to Add mode.
 function resetForm() {
   form.reset();
   editingId = null;
@@ -39,7 +37,6 @@ function resetForm() {
   cancelButton.hidden = true;
 }
 
-// Read an API error message, if one is provided.
 async function getErrorMessage(response) {
   try {
     const data = await response.json();
@@ -52,17 +49,14 @@ async function getErrorMessage(response) {
       return data.message;
     }
   } catch (error) {
-    // The server may not have returned JSON.
+    // The response may not contain JSON.
   }
 
   return `Request failed (HTTP ${response.status}).`;
 }
 
-// Validate the collection returned by the API.
 function isValidProjectArray(data) {
-  if (!Array.isArray(data)) {
-    return false;
-  }
+  if (!Array.isArray(data)) return false;
 
   const seenIds = new Set();
 
@@ -86,29 +80,20 @@ function isValidProjectArray(data) {
       return false;
     }
 
-    const idKey = String(project.id);
+    const id = String(project.id);
 
-    if (seenIds.has(idKey)) {
-      return false;
-    }
-
-    seenIds.add(idKey);
+    if (seenIds.has(id)) return false;
+    seenIds.add(id);
     return true;
   });
 }
 
-// Load the authoritative project collection from the API.
 async function loadProjects(options = {}) {
   const manageBusy = options.manageBusy !== false;
   const showLoading = options.showLoading !== false;
 
-  if (manageBusy) {
-    setBusy(true);
-  }
-
-  if (showLoading) {
-    showMessage("Loading projects...");
-  }
+  if (manageBusy) setBusy(true);
+  if (showLoading) showMessage("Loading projects...");
 
   try {
     const response = await fetch("/api/projects");
@@ -123,11 +108,9 @@ async function loadProjects(options = {}) {
       throw new Error("The server returned invalid project data.");
     }
 
-    // Replace, rather than append, to prevent duplicate records.
     projects.splice(0, projects.length, ...data);
     collectionLoaded = true;
 
-    // If the edited record no longer exists, leave Edit mode.
     if (
       editingId !== null &&
       !projects.some(
@@ -142,7 +125,7 @@ async function loadProjects(options = {}) {
   } catch (error) {
     const detail =
       error instanceof TypeError
-        ? "Could not connect to the server. Check that it is running and try again."
+        ? "Could not connect to the server. Check that it is running."
         : error.message;
 
     renderProjects();
@@ -150,13 +133,10 @@ async function loadProjects(options = {}) {
 
     return { ok: false, error: detail };
   } finally {
-    if (manageBusy) {
-      setBusy(false);
-    }
+    if (manageBusy) setBusy(false);
   }
 }
 
-// Display projects with Edit and Delete buttons.
 function renderProjects() {
   projectList.replaceChildren();
 
@@ -166,7 +146,7 @@ function renderProjects() {
     const editButton = document.createElement("button");
     const deleteButton = document.createElement("button");
 
-    // Use textContent so entered names are displayed as text.
+    // Treat entered project names as text, never as HTML.
     details.textContent = `${project.name} - ${project.status}`;
 
     editButton.type = "button";
@@ -213,7 +193,7 @@ function renderProjects() {
         `Delete the project "${projectToDelete.name}"?`
       );
 
-      // Cancellation must not send a request.
+      // A cancelled deletion sends no request.
       if (!confirmed) return;
 
       setBusy(true);
@@ -229,10 +209,7 @@ function renderProjects() {
           throw new Error(await getErrorMessage(response));
         }
 
-        if (
-          editingId !== null &&
-          String(editingId) === String(projectToDelete.id)
-        ) {
+        if (String(editingId) === String(projectToDelete.id)) {
           resetForm();
         }
 
@@ -251,7 +228,7 @@ function renderProjects() {
       } catch (error) {
         const detail =
           error instanceof TypeError
-            ? "Could not connect to the server. Check your connection and try again."
+            ? "Could not connect to the server. Check your connection."
             : error.message;
 
         showMessage(`Could not delete project: ${detail}`);
@@ -265,15 +242,13 @@ function renderProjects() {
     item.appendChild(editButton);
     item.appendChild(document.createTextNode(" "));
     item.appendChild(deleteButton);
-
     projectList.appendChild(item);
   });
 
-  // A failed initial load must not look like a successfully empty list.
+  // Do not show the empty state until a load has succeeded.
   emptyState.hidden = !collectionLoaded || projects.length > 0;
 }
 
-// There is only one form submit listener.
 form.addEventListener("submit", async function (event) {
   event.preventDefault();
 
@@ -298,11 +273,13 @@ form.addEventListener("submit", async function (event) {
     return;
   }
 
-  // Editing must refer to a project currently in the API collection.
+  const wasEditing = editingId !== null;
+  const targetId = editingId;
+
   if (
-    editingId !== null &&
+    wasEditing &&
     !projects.some(
-      (project) => String(project.id) === String(editingId)
+      (project) => String(project.id) === String(targetId)
     )
   ) {
     resetForm();
@@ -311,8 +288,6 @@ form.addEventListener("submit", async function (event) {
     return;
   }
 
-  const wasEditing = editingId !== null;
-  const targetId = editingId;
   const url = wasEditing
     ? `/api/projects/${encodeURIComponent(targetId)}`
     : "/api/projects";
@@ -333,7 +308,7 @@ form.addEventListener("submit", async function (event) {
       throw new Error(await getErrorMessage(response));
     }
 
-    // Only reset after the mutation itself succeeds.
+    // Reset only after the server confirms the mutation succeeded.
     resetForm();
 
     const result = await loadProjects({
@@ -349,16 +324,16 @@ form.addEventListener("submit", async function (event) {
       );
     } else {
       showMessage(
-        `Project was saved, but the list could not be refreshed: ${result.error}`
+        `Project saved, but the list could not be refreshed: ${result.error}`
       );
     }
   } catch (error) {
     const detail =
       error instanceof TypeError
-        ? "Could not connect to the server. Check that it is running and try again."
+        ? "Could not connect to the server. Check that it is running."
         : error.message;
 
-    // Keep the current input and Edit mode if the mutation fails.
+    // Keep the user's input and current Edit mode after failure.
     showMessage(
       `${wasEditing ? "Could not update project" : "Could not add project"}: ${detail}`
     );
@@ -367,7 +342,6 @@ form.addEventListener("submit", async function (event) {
   }
 });
 
-// Cancel editing without sending an API request.
 cancelButton.addEventListener("click", function () {
   if (busy) return;
 
